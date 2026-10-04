@@ -1,0 +1,31 @@
+services:
+  comfy-openai-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: comfy-openai-proxy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      # Point to comfy-api-proxy running on the host machine.
+      # Change this to your Comfy Cloud URL or remote instance if needed.
+      - COMFY_BASE_URL=${COMFY_BASE_URL:-http://host.docker.internal:8189}
+      - COMFY_API_KEY=${COMFY_API_KEY:-}
+      - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-500}
+      - JOB_TIMEOUT_SECS=${JOB_TIMEOUT_SECS:-180}
+      - DEFAULT_CHECKPOINT=${DEFAULT_CHECKPOINT:-}
+    volumes:
+      # Mount templates so you can modify or test workflows without rebuilding the image
+      - ./templates:/app/templates:ro
+    extra_hosts:
+      # Allows the container to access services running on the host machine
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
