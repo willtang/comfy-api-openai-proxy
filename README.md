@@ -66,6 +66,8 @@ Set via environment variables:
 | `DEFAULT_CHECKPOINT` | Override default checkpoint name in template | _None_ |
 | `TXT2IMG_TEMPLATE_PATH` | Path to txt2img workflow JSON | `templates/txt2img.json` |
 | `IMG2IMG_TEMPLATE_PATH` | Path to img2img workflow JSON | `templates/img2img.json` |
+| `TXT2IMG_PROMPT_NODE_ID` | Optional node ID for txt2img prompt (e.g. `459:471` or `6`) | _Auto-detect_ |
+| `IMG2IMG_PROMPT_NODE_ID` | Optional node ID for img2img prompt (e.g. `459:471` or `6`) | _Auto-detect_ |
 
 ---
 

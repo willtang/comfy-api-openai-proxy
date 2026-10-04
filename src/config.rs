@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub job_timeout_secs: u64,
     pub txt2img_template_path: PathBuf,
     pub img2img_template_path: PathBuf,
+    pub txt2img_prompt_node_id: Option<String>,
+    pub img2img_prompt_node_id: Option<String>,
     pub default_checkpoint: Option<String>,
 }
 
@@ -52,6 +54,18 @@ impl AppConfig {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("templates/img2img.json"));
 
+        let txt2img_prompt_node_id = env::var("TXT2IMG_PROMPT_NODE_ID")
+            .or_else(|_| env::var("TXT2IMG_NODE_ID"))
+            .or_else(|_| env::var("PROMPT_NODE_ID"))
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+
+        let img2img_prompt_node_id = env::var("IMG2IMG_PROMPT_NODE_ID")
+            .or_else(|_| env::var("IMG2IMG_NODE_ID"))
+            .or_else(|_| env::var("PROMPT_NODE_ID"))
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+
         let default_checkpoint = env::var("DEFAULT_CHECKPOINT")
             .ok()
             .filter(|s| !s.trim().is_empty());
@@ -65,6 +79,8 @@ impl AppConfig {
             job_timeout_secs,
             txt2img_template_path,
             img2img_template_path,
+            txt2img_prompt_node_id,
+            img2img_prompt_node_id,
             default_checkpoint,
         }
     }

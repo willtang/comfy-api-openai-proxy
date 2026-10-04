@@ -12,10 +12,17 @@ pub const DEFAULT_IMG2IMG_TEMPLATE: &str = include_str!("../../templates/img2img
 pub struct WorkflowManager {
     txt2img_template: Value,
     img2img_template: Value,
+    txt2img_prompt_node_id: Option<String>,
+    img2img_prompt_node_id: Option<String>,
 }
 
 impl WorkflowManager {
-    pub fn new(txt2img_path: &Path, img2img_path: &Path) -> Self {
+    pub fn new(
+        txt2img_path: &Path,
+        img2img_path: &Path,
+        txt2img_prompt_node_id: Option<String>,
+        img2img_prompt_node_id: Option<String>,
+    ) -> Self {
         let txt2img_template = if txt2img_path.exists() {
             info!("Loading txt2img template from {:?}", txt2img_path);
             let content = fs::read_to_string(txt2img_path)
@@ -39,6 +46,8 @@ impl WorkflowManager {
         Self {
             txt2img_template,
             img2img_template,
+            txt2img_prompt_node_id,
+            img2img_prompt_node_id,
         }
     }
 
@@ -49,7 +58,7 @@ impl WorkflowManager {
         checkpoint: Option<&str>,
     ) -> Result<Value, AppError> {
         let mut workflow = self.txt2img_template.clone();
-        Self::patch_prompt(&mut workflow, prompt)?;
+        Self::patch_prompt(&mut workflow, prompt, self.txt2img_prompt_node_id.as_deref())?;
 
         if let Some(size) = size_str {
             let (w, h) = Self::parse_size(size)?;
@@ -78,7 +87,7 @@ impl WorkflowManager {
         Self::patch_input_asset(&mut workflow, asset_id)?;
 
         // 2. Patch prompt
-        Self::patch_prompt(&mut workflow, prompt)?;
+        Self::patch_prompt(&mut workflow, prompt, self.img2img_prompt_node_id.as_deref())?;
 
         // 3. Patch dimensions if specified
         if let Some(size) = size_str {
@@ -146,28 +155,105 @@ impl WorkflowManager {
         Ok(())
     }
 
-    fn patch_prompt(workflow: &mut Value, prompt: &str) -> Result<(), AppError> {
+    fn set_node_prompt(node: &mut Value, prompt: &str) -> bool {
+        let is_clip_text_encode = node
+            .get("class_type")
+            .and_then(|v| v.as_str())
+            .map_or(false, |s| s == "CLIPTextEncode");
+
+        let Some(inputs) = node.get_mut("inputs").and_then(|v| v.as_object_mut()) else {
+            return false;
+        };
+
+        // If inputs has a string "prompt" field, update it
+        if let Some(val) = inputs.get("prompt") {
+            if val.is_string() {
+                inputs.insert("prompt".to_string(), json!(prompt));
+                return true;
+            }
+        }
+
+        // If inputs has a string "text" field, update it
+        if let Some(val) = inputs.get("text") {
+            if val.is_string() {
+                inputs.insert("text".to_string(), json!(prompt));
+                return true;
+            }
+        }
+
+        // If inputs has a "prompt" key (e.g. placeholder value)
+        if inputs.contains_key("prompt") {
+            inputs.insert("prompt".to_string(), json!(prompt));
+            return true;
+        }
+
+        // If inputs has a "text" key
+        if inputs.contains_key("text") {
+            inputs.insert("text".to_string(), json!(prompt));
+            return true;
+        }
+
+        // Fallback based on class_type
+        if is_clip_text_encode {
+            inputs.insert("text".to_string(), json!(prompt));
+            return true;
+        }
+
+        // Default to "prompt"
+        inputs.insert("prompt".to_string(), json!(prompt));
+        true
+    }
+
+    fn patch_prompt(
+        workflow: &mut Value,
+        prompt: &str,
+        configured_node_id: Option<&str>,
+    ) -> Result<(), AppError> {
         let graph = workflow
             .as_object_mut()
             .ok_or_else(|| AppError::BadRequest("Workflow must be a JSON object".to_string()))?;
 
+        // If a specific prompt node ID is configured, patch that node directly
+        if let Some(node_id) = configured_node_id {
+            let node = graph.get_mut(node_id).ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "Configured prompt node '{node_id}' not found in workflow template"
+                ))
+            })?;
+
+            if !Self::set_node_prompt(node, prompt) {
+                return Err(AppError::BadRequest(format!(
+                    "Failed to set prompt on configured node '{node_id}': missing or invalid 'inputs' object"
+                )));
+            }
+            debug!("Updated prompt on configured node '{}'", node_id);
+            return Ok(());
+        }
+
         let mut patched = false;
 
-        // Try node "6" first (standard positive prompt node)
+        // 1. Try node "6" first (standard positive prompt node) if it's a prompt node
         if let Some(node) = graph.get_mut("6") {
-            if let Some(inputs) = node.get_mut("inputs").and_then(|v| v.as_object_mut()) {
-                inputs.insert("text".to_string(), json!(prompt));
-                patched = true;
+            let is_prompt_node = node
+                .get("class_type")
+                .and_then(|v| v.as_str())
+                .map_or(false, |c| c == "CLIPTextEncode")
+                || node
+                    .get("inputs")
+                    .and_then(|i| i.get("text").or_else(|| i.get("prompt")))
+                    .map_or(false, |v| v.is_string());
+
+            if is_prompt_node {
+                patched = Self::set_node_prompt(node, prompt);
             }
         }
 
-        // Fallback: search for first CLIPTextEncode node that is not negative
+        // 2. Fallback: search for first CLIPTextEncode node that is not negative
         if !patched {
             for (id, node) in graph.iter_mut() {
                 if let Some(class_type) = node.get("class_type").and_then(|v| v.as_str()) {
                     if class_type == "CLIPTextEncode" && id != "7" {
-                        if let Some(inputs) = node.get_mut("inputs").and_then(|v| v.as_object_mut()) {
-                            inputs.insert("text".to_string(), json!(prompt));
+                        if Self::set_node_prompt(node, prompt) {
                             patched = true;
                             break;
                         }
@@ -176,9 +262,38 @@ impl WorkflowManager {
             }
         }
 
+        // 3. Fallback: search for any non-negative node with string prompt/text input
+        if !patched {
+            for (id, node) in graph.iter_mut() {
+                if id == "7" {
+                    continue;
+                }
+
+                let is_negative = node
+                    .get("_meta")
+                    .and_then(|m| m.get("title"))
+                    .and_then(|t| t.as_str())
+                    .map_or(false, |t| t.to_lowercase().contains("negative"));
+
+                if is_negative {
+                    continue;
+                }
+
+                let has_string_prompt = node
+                    .get("inputs")
+                    .and_then(|i| i.get("prompt").or_else(|| i.get("text")))
+                    .map_or(false, |v| v.is_string());
+
+                if has_string_prompt && Self::set_node_prompt(node, prompt) {
+                    patched = true;
+                    break;
+                }
+            }
+        }
+
         if !patched {
             return Err(AppError::BadRequest(
-                "Could not find a CLIPTextEncode node for positive prompt".to_string(),
+                "Could not find a prompt node for positive prompt".to_string(),
             ));
         }
 
@@ -260,3 +375,154 @@ impl WorkflowManager {
         Ok((width, height))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_default_txt2img_prompt_patching() {
+        let manager = WorkflowManager::new(
+            &PathBuf::from("non_existent_file.json"),
+            &PathBuf::from("non_existent_file.json"),
+            None,
+            None,
+        );
+
+        let workflow = manager
+            .prepare_txt2img("a scenic landscape", None, None)
+            .expect("prepare_txt2img should succeed");
+
+        assert_eq!(
+            workflow["6"]["inputs"]["text"],
+            "a scenic landscape"
+        );
+    }
+
+    #[test]
+    fn test_configured_node_id_with_prompt_field() {
+        let custom_template = json!({
+            "459:471": {
+                "class_type": "TextGenerate",
+                "inputs": {
+                    "prompt": "OLD PROMPT",
+                    "max_length": 16256
+                }
+            },
+            "other_node": {
+                "class_type": "Other",
+                "inputs": {}
+            }
+        });
+
+        let mut manager = WorkflowManager::new(
+            &PathBuf::from("non_existent.json"),
+            &PathBuf::from("non_existent.json"),
+            Some("459:471".to_string()),
+            None,
+        );
+        manager.txt2img_template = custom_template;
+
+        let workflow = manager
+            .prepare_txt2img("brand new prompt", None, None)
+            .expect("prepare_txt2img should succeed");
+
+        assert_eq!(
+            workflow["459:471"]["inputs"]["prompt"],
+            "brand new prompt"
+        );
+        assert_eq!(
+            workflow["459:471"]["inputs"]["max_length"],
+            16256
+        );
+    }
+
+    #[test]
+    fn test_configured_node_id_not_found() {
+        let custom_template = json!({
+            "1": {
+                "class_type": "SomeNode",
+                "inputs": {}
+            }
+        });
+
+        let mut manager = WorkflowManager::new(
+            &PathBuf::from("non_existent.json"),
+            &PathBuf::from("non_existent.json"),
+            Some("non_existent_node".to_string()),
+            None,
+        );
+        manager.txt2img_template = custom_template;
+
+        let err = manager
+            .prepare_txt2img("prompt", None, None)
+            .unwrap_err();
+
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(msg.contains("Configured prompt node 'non_existent_node' not found"));
+            }
+            _ => panic!("Expected BadRequest error"),
+        }
+    }
+
+    #[test]
+    fn test_fallback_node_with_prompt_field() {
+        let custom_template = json!({
+            "459:452": {
+                "class_type": "TextEncodeQwenImage21",
+                "inputs": {
+                    "prompt": ["459:472", 0]
+                }
+            },
+            "459:471": {
+                "class_type": "TextGenerate",
+                "inputs": {
+                    "prompt": "OLD PROMPT",
+                    "max_length": 16256
+                }
+            }
+        });
+
+        let mut manager = WorkflowManager::new(
+            &PathBuf::from("non_existent.json"),
+            &PathBuf::from("non_existent.json"),
+            None,
+            None,
+        );
+        manager.txt2img_template = custom_template;
+
+        let workflow = manager
+            .prepare_txt2img("fallback detected prompt", None, None)
+            .expect("prepare_txt2img should succeed");
+
+        assert_eq!(
+            workflow["459:471"]["inputs"]["prompt"],
+            "fallback detected prompt"
+        );
+    }
+
+    #[test]
+    fn test_qwen_template_file_with_node_id() {
+        let qwen_path = PathBuf::from("templates/image_qwen_image_2_1_t2i.json");
+        if qwen_path.exists() {
+            let manager = WorkflowManager::new(
+                &qwen_path,
+                &PathBuf::from("templates/img2img.json"),
+                Some("459:471".to_string()),
+                None,
+            );
+
+            let workflow = manager
+                .prepare_txt2img("cinematic photo of a cyberpunk street", None, None)
+                .expect("prepare_txt2img should succeed");
+
+            assert_eq!(
+                workflow["459:471"]["inputs"]["prompt"],
+                "cinematic photo of a cyberpunk street"
+            );
+        }
+    }
+}
+

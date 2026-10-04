@@ -44,6 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Poll Interval: {} ms, Job Timeout: {} s", config.poll_interval_ms, config.job_timeout_secs);
     info!("txt2img template path: {:?}", config.txt2img_template_path);
     info!("img2img template path: {:?}", config.img2img_template_path);
+    if let Some(ref node_id) = config.txt2img_prompt_node_id {
+        info!("txt2img prompt node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.img2img_prompt_node_id {
+        info!("img2img prompt node ID: {}", node_id);
+    }
 
     // 3. Initialize Shared Services
     let comfy_client = ComfyV2Client::new(
@@ -53,6 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workflow_manager = Arc::new(WorkflowManager::new(
         &config.txt2img_template_path,
         &config.img2img_template_path,
+        config.txt2img_prompt_node_id.clone(),
+        config.img2img_prompt_node_id.clone(),
     ));
 
     let state = Arc::new(AppState {
