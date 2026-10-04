@@ -87,6 +87,11 @@ impl ComfyV2Client {
             url, idempotency_key
         );
 
+        debug!(
+            "Workflow JSON:\n{}",
+            serde_json::to_string_pretty(&workflow).unwrap_or_else(|_| workflow.to_string())
+        );
+
         let payload = JobSubmitRequest {
             workflow,
             extra_data,
