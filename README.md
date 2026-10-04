@@ -91,7 +91,7 @@ Ensure Docker is running, then run:
 docker compose up -d --build
 ```
 
-- Maps `http://localhost:3000` to the container.
+- Maps `http://localhost:8190` to the container.
 - Connects automatically to `comfy-api-proxy` running on your host machine via `http://host.docker.internal:8189`.
 - Mounts `./templates` into `/app/templates` so you can customize workflows without rebuilding the image.
 
@@ -118,7 +118,7 @@ cargo run --release
 ### 1. Text-to-Image Generation (curl)
 
 ```bash
-curl http://localhost:3000/v1/images/generations \
+curl http://localhost:8190/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "A tranquil Japanese garden with cherry blossoms in spring, 8k masterpiece",

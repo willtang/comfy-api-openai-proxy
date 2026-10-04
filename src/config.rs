@@ -16,6 +16,9 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_env() -> Self {
+        // Load variables from .env file if present
+        dotenvy::dotenv().ok();
+
         let comfy_base_url = env::var("COMFY_BASE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8189".to_string())
             .trim_end_matches('/')

@@ -1,0 +1,6 @@
+*
+
+!.gitignore
+
+!img2img.json
+!txt2img.json

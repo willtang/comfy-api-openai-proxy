@@ -42,6 +42,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if config.comfy_api_key.is_some() { "Yes" } else { "No" }
     );
     info!("Poll Interval: {} ms, Job Timeout: {} s", config.poll_interval_ms, config.job_timeout_secs);
+    info!("txt2img template path: {:?}", config.txt2img_template_path);
+    info!("img2img template path: {:?}", config.img2img_template_path);
 
     // 3. Initialize Shared Services
     let comfy_client = ComfyV2Client::new(
