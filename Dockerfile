@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Cache dependency layer
-COPY Cargo.toml Cargo.lock ./
+# Cache dependency layer (Cargo.lock* is optional so builds succeed with or without it)
+COPY Cargo.toml Cargo.lock* ./
 # Create dummy src/main.rs and templates for cargo build cache
 RUN mkdir src && echo "fn main() {}" > src/main.rs && \
     mkdir templates && echo "{}" > templates/txt2img.json && echo "{}" > templates/img2img.json && \
@@ -24,8 +24,8 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs && \
 COPY src ./src
 COPY templates ./templates
 
-# Build the release binary
-RUN cargo build --release
+# Ensure cargo detects source changes and builds the binary
+RUN touch src/main.rs && cargo build --release
 
 # --- Runtime Stage ---
 FROM debian:bookworm-slim AS runner
