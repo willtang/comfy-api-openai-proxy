@@ -6,10 +6,10 @@ services:
     container_name: comfy-openai-proxy
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8190:8190"
     environment:
       - HOST=0.0.0.0
-      - PORT=3000
+      - PORT=8190
       # Point to comfy-api-proxy running on the host machine.
       # Change this to your Comfy Cloud URL or remote instance if needed.
       - COMFY_BASE_URL=${COMFY_BASE_URL:-http://host.docker.internal:8189}
