@@ -20,6 +20,8 @@ services:
       - DEFAULT_CHECKPOINT=${DEFAULT_CHECKPOINT:-}
       - TXT2IMG_TEMPLATE_PATH=${TXT2IMG_TEMPLATE_PATH:-templates/txt2img.json}
       - IMG2IMG_TEMPLATE_PATH=${IMG2IMG_TEMPLATE_PATH:-templates/img2img.json}
+      - TXT2IMG_PROMPT_NODE_ID=${TXT2IMG_PROMPT_NODE_ID:-}
+      - IMG2IMG_PROMPT_NODE_ID=${IMG2IMG_PROMPT_NODE_ID:-}
     volumes:
       # Mount templates so you can modify or test workflows without rebuilding the image
       - ./templates:/app/templates:ro
