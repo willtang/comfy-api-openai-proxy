@@ -71,6 +71,44 @@ async fn handle_edit_image_json(
     .await
 }
 
+fn extract_url_from_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Handle JSON array string e.g. ["/api/v1/files/..."]
+    if let Ok(vec) = serde_json::from_str::<Vec<String>>(trimmed) {
+        if let Some(first) = vec.first() {
+            let first_trimmed = first.trim();
+            if !first_trimmed.is_empty() {
+                return Some(first_trimmed.to_string());
+            }
+        }
+    }
+
+    // Handle JSON object e.g. {"url": "/api/v1/files/..."}
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(url) = val.get("url").and_then(|u| u.as_str()) {
+            let url_trimmed = url.trim();
+            if !url_trimmed.is_empty() {
+                return Some(url_trimmed.to_string());
+            }
+        }
+    }
+
+    // Handle direct string e.g. "/api/v1/files/..." or "http://..." or "data:..."
+    if trimmed.starts_with('/')
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("data:")
+    {
+        return Some(trimmed.to_string());
+    }
+
+    None
+}
+
 async fn handle_edit_image_multipart(
     state: Arc<AppState>,
     headers: HeaderMap,
@@ -98,33 +136,38 @@ async fn handle_edit_image_multipart(
         .map_err(|e| AppError::BadRequest(format!("Failed to read multipart stream: {e}")))?
     {
         let name = field.name().unwrap_or_default().to_string();
-        match name.as_str() {
-            "image" => {
+        let clean_name = name.trim_end_matches("[]").to_lowercase();
+
+        info!(
+            "Multipart field received: raw_name='{}', clean_name='{}', filename='{:?}'",
+            name,
+            clean_name,
+            field.file_name()
+        );
+
+        match clean_name.as_str() {
+            "image" | "images" | "image_urls" | "image_url" | "file" | "files" | "input"
+            | "input_image" => {
                 if let Some(fname) = field.file_name() {
-                    image_filename = fname.to_string();
+                    if !fname.trim().is_empty() {
+                        image_filename = fname.to_string();
+                    }
                 }
                 let bytes = field
                     .bytes()
                     .await
-                    .map_err(|e| AppError::BadRequest(format!("Failed to read image bytes: {e}")))?;
+                    .map_err(|e| AppError::BadRequest(format!("Failed to read field '{name}': {e}")))?;
+
                 if !bytes.is_empty() {
-                    raw_image_bytes = Some(bytes.to_vec());
-                }
-            }
-            "image_urls" | "image_url" | "images" => {
-                let text = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(format!("Failed to read image URL field: {e}")))?;
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
-                    // Handle JSON array string e.g. ["/api/v1/..."]
-                    if let Ok(vec) = serde_json::from_str::<Vec<String>>(trimmed) {
-                        if let Some(first) = vec.first() {
-                            image_url_str = Some(first.clone());
+                    if let Ok(text) = std::str::from_utf8(&bytes) {
+                        if let Some(url) = extract_url_from_text(text) {
+                            info!("Extracted image URL from text in field '{}': {}", name, url);
+                            image_url_str = Some(url);
+                        } else {
+                            raw_image_bytes = Some(bytes.to_vec());
                         }
                     } else {
-                        image_url_str = Some(trimmed.to_string());
+                        raw_image_bytes = Some(bytes.to_vec());
                     }
                 }
             }
@@ -160,7 +203,32 @@ async fn handle_edit_image_multipart(
                 }
             }
             _ => {
-                // Ignore unrecognized fields
+                if clean_name.starts_with("image") || clean_name.starts_with("file") {
+                    if let Some(fname) = field.file_name() {
+                        if !fname.trim().is_empty() {
+                            image_filename = fname.to_string();
+                        }
+                    }
+                    let bytes = field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::BadRequest(format!("Failed to read field '{name}': {e}")))?;
+
+                    if !bytes.is_empty() {
+                        if let Ok(text) = std::str::from_utf8(&bytes) {
+                            if let Some(url) = extract_url_from_text(text) {
+                                info!("Extracted image URL from field '{}': {}", name, url);
+                                image_url_str = Some(url);
+                            } else {
+                                raw_image_bytes = Some(bytes.to_vec());
+                            }
+                        } else {
+                            raw_image_bytes = Some(bytes.to_vec());
+                        }
+                    }
+                } else {
+                    info!("Ignoring unrecognized multipart field: '{}'", name);
+                }
             }
         }
     }
@@ -173,8 +241,8 @@ async fn handle_edit_image_multipart(
     }
 
     let (image_bytes, filename) = match (raw_image_bytes, image_url_str) {
-        (Some(bytes), _) => (bytes, image_filename),
-        (None, Some(url_str)) => {
+        (Some(bytes), None) => (bytes, image_filename),
+        (_, Some(url_str)) => {
             fetch_image_bytes(&url_str, Some(&headers), &state.config).await?
         }
         (None, None) => {
@@ -300,4 +368,30 @@ pub async fn execute_edit_workflow(
         created,
         data: image_datas,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_url_from_text() {
+        assert_eq!(
+            extract_url_from_text("[\"/api/v1/files/ab0f71c7/content\"]"),
+            Some("/api/v1/files/ab0f71c7/content".to_string())
+        );
+        assert_eq!(
+            extract_url_from_text("/api/v1/files/ab0f71c7/content"),
+            Some("/api/v1/files/ab0f71c7/content".to_string())
+        );
+        assert_eq!(
+            extract_url_from_text("{\"url\": \"http://example.com/img.png\"}"),
+            Some("http://example.com/img.png".to_string())
+        );
+        assert_eq!(
+            extract_url_from_text("data:image/png;base64,iVBORw0KGgo="),
+            Some("data:image/png;base64,iVBORw0KGgo=".to_string())
+        );
+        assert_eq!(extract_url_from_text("some random prompt text"), None);
+    }
 }
