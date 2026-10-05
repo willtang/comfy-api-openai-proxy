@@ -46,19 +46,13 @@ impl ComfyV2Client {
         let url = format!("{}/api/v2/assets", self.base_url);
         debug!("Uploading asset to {} with filename={}", url, filename);
 
-        let file_part_filepath = Part::bytes(data.clone())
-            .file_name(filename.to_string())
-            .mime_str(mime_type)
-            .map_err(|e| AppError::BadRequest(format!("Invalid mime type: {e}")))?;
-
-        let file_part_file = Part::bytes(data)
+        let file_part = Part::bytes(data)
             .file_name(filename.to_string())
             .mime_str(mime_type)
             .map_err(|e| AppError::BadRequest(format!("Invalid mime type: {e}")))?;
 
         let form = Form::new()
-            .part("file_path", file_part_filepath)
-            .part("file", file_part_file)
+            .part("file_path", file_part)
             .text("tags", "input");
 
         let req = self.apply_auth(self.client.post(&url)).multipart(form);
