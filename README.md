@@ -22,6 +22,8 @@ A lightweight Rust reverse proxy built with **Axum** and **Reqwest** that accept
   - Automatically randomizes seeds and injects prompts, dimensions, and checkpoint loaders.
 - **Resilient & Fast**:
   - Built with Rust, Axum, and Tokio for asynchronous execution and high throughput.
+- **Tested with Open WebUI**:
+  - Fully tested and verified for seamless image generation with **Open WebUI**.
 
 ---
 
@@ -167,6 +169,15 @@ with open("photo.png", "rb") as image_file:
     )
     print(edit_response.data[0].url)
 ```
+
+### 4. Open WebUI Integration
+
+Tested and verified for seamless image generation with **Open WebUI**:
+
+1. Navigate to **Admin Settings** -> **Images** in Open WebUI.
+2. Select **OpenAI** as the Image Generation Engine.
+3. Set **API Base URL** to `http://localhost:8190/v1` (or `http://host.docker.internal:8190/v1` if Open WebUI is running inside Docker).
+4. Set **API Key** to `not-needed` (or your `COMFY_API_KEY` if authentication is configured).
 
 ---
 

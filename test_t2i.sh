@@ -1,4 +1,4 @@
-curl http://192.168.0.112:8190/v1/images/generations \
+curl http://127.0.0.1:8190/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "A tranquil Japanese garden with cherry blossoms in spring, 8k masterpiece",
