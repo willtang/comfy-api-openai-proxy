@@ -132,6 +132,7 @@ mod tests {
             port: 8190,
             comfy_base_url: "http://127.0.0.1:8189".into(),
             comfy_api_key: None,
+            openwebui_base_url: None,
             poll_interval_ms: 100,
             job_timeout_secs: 10,
             default_checkpoint: None,

@@ -1,6 +1,7 @@
 pub mod comfy_v2;
 pub mod config;
 pub mod error;
+pub mod image_fetcher;
 pub mod openai;
 pub mod routes;
 
@@ -37,6 +38,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env();
     info!("Starting Comfy API v2 OpenAI Proxy...");
     info!("ComfyUI v2 Base URL: {}", config.comfy_base_url);
+    if let Some(ref base) = config.openwebui_base_url {
+        info!("Open WebUI Base URL: {}", base);
+    }
     info!(
         "ComfyUI API Key configured: {}",
         if config.comfy_api_key.is_some() { "Yes" } else { "No" }

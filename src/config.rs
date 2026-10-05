@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub comfy_base_url: String,
     pub comfy_api_key: Option<String>,
+    pub openwebui_base_url: Option<String>,
     pub host: String,
     pub port: u16,
     pub poll_interval_ms: u64,
@@ -29,6 +30,13 @@ impl AppConfig {
         let comfy_api_key = env::var("COMFY_API_KEY")
             .ok()
             .filter(|s| !s.trim().is_empty());
+
+        let openwebui_base_url = env::var("OPENWEBUI_BASE_URL")
+            .or_else(|_| env::var("WEBUI_BASE_URL"))
+            .or_else(|_| env::var("IMAGE_BASE_URL"))
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim_end_matches('/').to_string());
 
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("PORT")
@@ -73,6 +81,7 @@ impl AppConfig {
         Self {
             comfy_base_url,
             comfy_api_key,
+            openwebui_base_url,
             host,
             port,
             poll_interval_ms,

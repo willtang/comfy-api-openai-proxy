@@ -1,34 +1,55 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use axum::extract::rejection::JsonRejection;
-use axum::extract::State;
+
+use axum::extract::{Request, State};
+use axum::http::HeaderMap;
 use axum::Json;
 use base64::Engine;
 use tracing::{error, info};
 
 use crate::error::AppError;
-use crate::openai::requests::GenerateImageRequest;
+use crate::image_fetcher::fetch_image_bytes;
+use crate::openai::requests::UnifiedImageRequest;
 use crate::openai::responses::{ImageData, ImageResponse};
+use crate::routes::edits::execute_edit_workflow;
 use crate::AppState;
 
 pub async fn handle_generate_image(
     State(state): State<Arc<AppState>>,
-    request: Result<Json<GenerateImageRequest>, JsonRejection>,
+    headers: HeaderMap,
+    req: Request,
 ) -> Result<Json<ImageResponse>, AppError> {
-    let payload = match request {
-        Ok(Json(payload)) => payload,
-        Err(rejection) => {
-            error!("Failed to parse JSON body for image generation: {}", rejection);
-            return Err(AppError::BadRequest(format!(
-                "Invalid JSON request body: {}",
-                rejection
-            )));
-        }
-    };
+    let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Failed to read request body: {e}")))?;
+
+    let payload: UnifiedImageRequest = serde_json::from_slice(&body_bytes).map_err(|rejection| {
+        error!("Failed to parse JSON body for image generation: {}", rejection);
+        AppError::BadRequest(format!("Invalid JSON request body: {}", rejection))
+    })?;
 
     if payload.prompt.trim().is_empty() {
         error!("Bad Request: Field 'prompt' is empty");
         return Err(AppError::BadRequest("Prompt cannot be empty".to_string()));
+    }
+
+    // Check if an input image was provided (e.g. Open WebUI image edit request sent to generation endpoint)
+    if let Some(input_image_source) = payload.get_input_image() {
+        info!("Input image detected in generation payload, executing img2img edit flow");
+        let (image_bytes, filename) =
+            fetch_image_bytes(&input_image_source, Some(&headers), &state.config).await?;
+
+        return execute_edit_workflow(
+            state,
+            image_bytes,
+            filename,
+            payload.prompt,
+            payload.model,
+            payload.n.unwrap_or(1),
+            payload.size,
+            payload.response_format.unwrap_or_else(|| "url".to_string()),
+        )
+        .await;
     }
 
     let n = payload.n.unwrap_or(1).clamp(1, 10);
