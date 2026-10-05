@@ -100,22 +100,28 @@ pub async fn handle_generate_image(
 
         // Output from SaveImage node
         let output_url = &outputs[0].url;
+        let image_bytes = state.comfy_client.fetch_asset_bytes(output_url).await?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
+        let data_uri = format!("data:image/png;base64,{b64}");
 
-        if response_format == "b64_json" {
-            let image_bytes = state.comfy_client.fetch_asset_bytes(output_url).await?;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-            image_datas.push(ImageData {
-                url: None,
-                b64_json: Some(b64),
-                revised_prompt: Some(payload.prompt.clone()),
-            });
+        let url_val = if output_url.starts_with("http://") || output_url.starts_with("https://") {
+            if output_url.contains("host.docker.internal")
+                || output_url.contains("127.0.0.1")
+                || output_url.contains("localhost")
+            {
+                data_uri.clone()
+            } else {
+                output_url.clone()
+            }
         } else {
-            image_datas.push(ImageData {
-                url: Some(output_url.clone()),
-                b64_json: None,
-                revised_prompt: Some(payload.prompt.clone()),
-            });
-        }
+            data_uri.clone()
+        };
+
+        image_datas.push(ImageData {
+            url: Some(url_val),
+            b64_json: Some(b64),
+            revised_prompt: Some(payload.prompt.clone()),
+        });
     }
 
     let created = SystemTime::now()
