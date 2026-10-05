@@ -180,3 +180,10 @@ To use your own workflow:
 1. In ComfyUI, configure your workflow.
 2. Enable **Dev Mode** in ComfyUI settings, then click **Save (API Format)**.
 3. Save the JSON file to `templates/txt2img.json` or `templates/img2img.json`.
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
