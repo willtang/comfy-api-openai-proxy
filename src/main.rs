@@ -82,18 +82,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = routes::create_router(state)
         .layer(cors)
         .layer(
-            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
-                let path = request.uri().path();
-                if path == "/health" || path == "/v1/health" {
-                    tracing::Span::none()
-                } else {
-                    tracing::debug_span!(
-                        "http_request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                    )
-                }
-            }),
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    let path = request.uri().path();
+                    if path == "/health" || path == "/v1/health" {
+                        tracing::Span::none()
+                    } else {
+                        tracing::debug_span!(
+                            "http_request",
+                            method = %request.method(),
+                            uri = %request.uri(),
+                        )
+                    }
+                })
+                .on_request(|_request: &axum::http::Request<_>, span: &tracing::Span| {
+                    if !span.is_none() {
+                        tracing::debug!("started processing request");
+                    }
+                })
+                .on_response(
+                    |response: &axum::http::Response<_>, latency: std::time::Duration, span: &tracing::Span| {
+                        if !span.is_none() {
+                            tracing::debug!(
+                                latency = %format_args!("{} ms", latency.as_millis()),
+                                status = %response.status().as_u16(),
+                                "finished processing request"
+                            );
+                        }
+                    },
+                ),
         );
 
     // 5. Start Server
