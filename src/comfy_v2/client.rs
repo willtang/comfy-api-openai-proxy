@@ -61,10 +61,11 @@ impl ComfyV2Client {
         let status = resp.status();
         if !status.is_success() {
             let error_text = resp.text().await.unwrap_or_default();
-            error!("Upload asset failed with status {}: {}", status, error_text);
+            debug!("HTTP request error: url={}, status={}, body={}", url, status, error_text);
+            error!("Upload asset failed for url {}: status {} - {}", url, status, error_text);
             return Err(AppError::ComfyApiError(format!(
-                "Asset upload failed ({}): {}",
-                status, error_text
+                "Asset upload failed ({}): {} [url: {}]",
+                status, error_text, url
             )));
         }
 
@@ -107,10 +108,11 @@ impl ComfyV2Client {
 
         if !status.is_success() {
             let error_text = resp.text().await.unwrap_or_default();
-            error!("Job submission failed with status {}: {}", status, error_text);
+            debug!("HTTP request error: url={}, status={}, body={}", url, status, error_text);
+            error!("Job submission failed for url {}: status {} - {}", url, status, error_text);
             return Err(AppError::ComfyApiError(format!(
-                "Job submission failed ({}): {}",
-                status, error_text
+                "Job submission failed ({}): {} [url: {}]",
+                status, error_text, url
             )));
         }
 
@@ -128,9 +130,11 @@ impl ComfyV2Client {
         let status = resp.status();
         if !status.is_success() {
             let error_text = resp.text().await.unwrap_or_default();
+            debug!("HTTP request error: url={}, status={}, body={}", url, status, error_text);
+            error!("Failed to get job {job_id} for url {}: status {} - {}", url, status, error_text);
             return Err(AppError::ComfyApiError(format!(
-                "Failed to get job {job_id} ({}): {error_text}",
-                status
+                "Failed to get job {job_id} ({}): {} [url: {}]",
+                status, error_text, url
             )));
         }
 
@@ -190,6 +194,8 @@ impl ComfyV2Client {
         let status = resp.status();
         if !status.is_success() {
             let error_text = resp.text().await.unwrap_or_default();
+            debug!("HTTP request error: url={}, status={}, body={}", full_url, status, error_text);
+            error!("Failed to download asset from url {}: status {} - {}", full_url, status, error_text);
             return Err(AppError::ComfyApiError(format!(
                 "Failed to download asset from {full_url} ({}): {error_text}",
                 status
