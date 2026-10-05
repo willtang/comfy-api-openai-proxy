@@ -34,7 +34,7 @@ impl AppConfig {
         let port = env::var("PORT")
             .ok()
             .and_then(|p| p.parse().ok())
-            .unwrap_or(3000);
+            .unwrap_or(8190);
 
         let poll_interval_ms = env::var("POLL_INTERVAL_MS")
             .ok()

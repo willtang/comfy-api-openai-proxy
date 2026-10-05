@@ -60,7 +60,7 @@ Set via environment variables:
 | `COMFY_BASE_URL` | Comfy API v2 base URL | `http://127.0.0.1:8189` |
 | `COMFY_API_KEY` | Optional Bearer token (for Comfy Cloud or authenticated proxies) | _None_ |
 | `HOST` | Proxy bind host | `0.0.0.0` |
-| `PORT` | Proxy bind port | `3000` |
+| `PORT` | Proxy bind port | `8190` |
 | `POLL_INTERVAL_MS` | Job polling delay in milliseconds | `500` |
 | `JOB_TIMEOUT_SECS` | Maximum seconds before job timeout | `180` |
 | `DEFAULT_CHECKPOINT` | Override default checkpoint name in template | _None_ |
@@ -132,7 +132,7 @@ curl http://localhost:8190/v1/images/generations \
 ### 2. Image Edit (curl)
 
 ```bash
-curl http://localhost:3000/v1/images/edits \
+curl http://localhost:8190/v1/images/edits \
   -F "image=@input.png" \
   -F "prompt=Add snow and winter lighting to the scene" \
   -F "response_format=url"
@@ -144,7 +144,7 @@ curl http://localhost:3000/v1/images/edits \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:3000/v1",
+    base_url="http://localhost:8190/v1",
     api_key="not-needed" # or your COMFY_API_KEY if authenticated
 )
 

@@ -46,11 +46,11 @@ COPY templates ./templates
 
 # Environment defaults
 ENV HOST=0.0.0.0 \
-    PORT=3000 \
+    PORT=8190 \
     COMFY_BASE_URL=http://host.docker.internal:8189 \
     TXT2IMG_TEMPLATE_PATH=/app/templates/txt2img.json \
     IMG2IMG_TEMPLATE_PATH=/app/templates/img2img.json
 
-EXPOSE 3000
+EXPOSE 8190
 
 CMD ["comfy-api-openai-proxy"]

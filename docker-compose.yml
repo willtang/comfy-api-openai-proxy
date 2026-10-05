@@ -24,7 +24,7 @@ services:
       # Allows the container to access services running on the host machine
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8190/health"]
       interval: 30s
       timeout: 5s
       retries: 3
