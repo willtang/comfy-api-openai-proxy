@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use axum::extract::rejection::JsonRejection;
 use axum::extract::State;
 use axum::Json;
 use base64::Engine;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::error::AppError;
 use crate::openai::requests::GenerateImageRequest;
@@ -12,9 +13,21 @@ use crate::AppState;
 
 pub async fn handle_generate_image(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<GenerateImageRequest>,
+    request: Result<Json<GenerateImageRequest>, JsonRejection>,
 ) -> Result<Json<ImageResponse>, AppError> {
+    let payload = match request {
+        Ok(Json(payload)) => payload,
+        Err(rejection) => {
+            error!("Failed to parse JSON body for image generation: {}", rejection);
+            return Err(AppError::BadRequest(format!(
+                "Invalid JSON request body: {}",
+                rejection
+            )));
+        }
+    };
+
     if payload.prompt.trim().is_empty() {
+        error!("Bad Request: Field 'prompt' is empty");
         return Err(AppError::BadRequest("Prompt cannot be empty".to_string()));
     }
 

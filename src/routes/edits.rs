@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use axum::extract::multipart::MultipartRejection;
 use axum::extract::{Multipart, State};
 use axum::Json;
 use base64::Engine;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::error::AppError;
 use crate::openai::responses::{ImageData, ImageResponse};
@@ -11,8 +12,19 @@ use crate::AppState;
 
 pub async fn handle_edit_image(
     State(state): State<Arc<AppState>>,
-    mut multipart: Multipart,
+    request: Result<Multipart, MultipartRejection>,
 ) -> Result<Json<ImageResponse>, AppError> {
+    let mut multipart = match request {
+        Ok(mp) => mp,
+        Err(rejection) => {
+            error!("Failed to parse multipart body for image edit: {}", rejection);
+            return Err(AppError::BadRequest(format!(
+                "Invalid multipart body: {}",
+                rejection
+            )));
+        }
+    };
+
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut image_filename = "input.png".to_string();
     let mut prompt: Option<String> = None;

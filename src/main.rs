@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "comfy_api_openai_proxy=debug,tower_http=info,warn".into()),
+                .unwrap_or_else(|_| "comfy_api_openai_proxy=debug,tower_http=debug,info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
