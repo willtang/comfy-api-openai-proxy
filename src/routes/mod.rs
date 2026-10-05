@@ -33,18 +33,26 @@ pub async fn log_request_middleware(
     req: Request,
     next: Next,
 ) -> impl IntoResponse {
+    let path = req.uri().path();
+    let is_health = path == "/health" || path == "/v1/health";
+
     let method = req.method().clone();
     let uri = req.uri().clone();
-    info!("--> Incoming HTTP Request: {} {}", method, uri);
+
+    if !is_health {
+        info!("--> Incoming HTTP Request: {} {}", method, uri);
+    }
 
     let response = next.run(req).await;
 
-    info!(
-        "<-- HTTP Response: {} {} => Status {}",
-        method,
-        uri,
-        response.status()
-    );
+    if !is_health {
+        info!(
+            "<-- HTTP Response: {} {} => Status {}",
+            method,
+            uri,
+            response.status()
+        );
+    }
 
     response
 }

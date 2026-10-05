@@ -81,7 +81,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = routes::create_router(state)
         .layer(cors)
-        .layer(TraceLayer::new_for_http());
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {
+                let path = request.uri().path();
+                if path == "/health" || path == "/v1/health" {
+                    tracing::Span::none()
+                } else {
+                    tracing::debug_span!(
+                        "http_request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                    )
+                }
+            }),
+        );
 
     // 5. Start Server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
