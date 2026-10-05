@@ -52,7 +52,8 @@ impl ComfyV2Client {
             .map_err(|e| AppError::BadRequest(format!("Invalid mime type: {e}")))?;
 
         let form = Form::new()
-            .part("file_path", file_part)
+            .part("file", file_part)
+            .text("file_path", filename.to_string())
             .text("tags", "input");
 
         let req = self.apply_auth(self.client.post(&url)).multipart(form);
