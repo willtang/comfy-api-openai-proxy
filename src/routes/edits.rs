@@ -265,6 +265,7 @@ async fn handle_edit_image_multipart(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_edit_workflow(
     state: Arc<AppState>,
     image_data: Vec<u8>,
@@ -302,7 +303,7 @@ pub async fn execute_edit_workflow(
     info!("Input image uploaded to v2 asset id: {}", uploaded_asset.id);
 
     let poll_interval = Duration::from_millis(state.config.poll_interval_ms);
-    let timeout = Duration::from_secs(state.config.job_timeout_secs);
+    let timeout = Duration::from_secs(state.config.img_timeout_secs);
 
     let mut image_datas = Vec::new();
 

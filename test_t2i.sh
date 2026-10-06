@@ -1,3 +1,4 @@
+#!/bin/bash
 curl http://127.0.0.1:8190/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{

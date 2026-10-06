@@ -13,14 +13,28 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::comfy_v2::client::ComfyV2Client;
-use crate::comfy_v2::workflow::WorkflowManager;
+use crate::comfy_v2::workflow::{WorkflowManager, WorkflowNodeConfig};
 use crate::config::AppConfig;
+
+#[derive(Clone, Debug)]
+pub struct CachedVideo {
+    pub id: String,
+    pub model: Option<String>,
+    pub prompt: String,
+    pub created_at: u64,
+    pub completed_at: u64,
+    pub url: String,
+    pub b64_json: Option<String>,
+    pub bytes: Vec<u8>,
+    pub mime_type: String,
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
     pub comfy_client: ComfyV2Client,
     pub workflow_manager: Arc<WorkflowManager>,
+    pub video_cache: Arc<tokio::sync::RwLock<std::collections::HashMap<String, CachedVideo>>>,
 }
 
 #[tokio::main]
@@ -45,14 +59,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "ComfyUI API Key configured: {}",
         if config.comfy_api_key.is_some() { "Yes" } else { "No" }
     );
-    info!("Poll Interval: {} ms, Job Timeout: {} s", config.poll_interval_ms, config.job_timeout_secs);
+    info!("Poll Interval: {} ms, Image Timeout: {} s, Video Timeout: {} s", config.poll_interval_ms, config.img_timeout_secs, config.vid_timeout_secs);
     info!("txt2img template path: {:?}", config.txt2img_template_path);
     info!("img2img template path: {:?}", config.img2img_template_path);
+    info!("txt2vid template path: {:?}", config.txt2vid_template_path);
+    info!("img2vid template path: {:?}", config.img2vid_template_path);
     if let Some(ref node_id) = config.txt2img_prompt_node_id {
         info!("txt2img prompt node ID: {}", node_id);
     }
     if let Some(ref node_id) = config.img2img_prompt_node_id {
         info!("img2img prompt node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.txt2vid_prompt_node_id {
+        info!("txt2vid prompt node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.txt2vid_seconds_node_id {
+        info!("txt2vid seconds node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.txt2vid_fps_node_id {
+        info!("txt2vid fps node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.img2vid_prompt_node_id {
+        info!("img2vid prompt node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.img2vid_image_node_id {
+        info!("img2vid image node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.img2vid_seconds_node_id {
+        info!("img2vid seconds node ID: {}", node_id);
+    }
+    if let Some(ref node_id) = config.img2vid_fps_node_id {
+        info!("img2vid fps node ID: {}", node_id);
     }
 
     // 3. Initialize Shared Services
@@ -60,17 +97,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.comfy_base_url.clone(),
         config.comfy_api_key.clone(),
     );
+    let node_config = WorkflowNodeConfig {
+        txt2img_prompt_node_id: config.txt2img_prompt_node_id.clone(),
+        img2img_prompt_node_id: config.img2img_prompt_node_id.clone(),
+        txt2vid_prompt_node_id: config.txt2vid_prompt_node_id.clone(),
+        txt2vid_seconds_node_id: config.txt2vid_seconds_node_id.clone(),
+        txt2vid_fps_node_id: config.txt2vid_fps_node_id.clone(),
+        img2vid_prompt_node_id: config.img2vid_prompt_node_id.clone(),
+        img2vid_image_node_id: config.img2vid_image_node_id.clone(),
+        img2vid_seconds_node_id: config.img2vid_seconds_node_id.clone(),
+        img2vid_fps_node_id: config.img2vid_fps_node_id.clone(),
+    };
     let workflow_manager = Arc::new(WorkflowManager::new(
         &config.txt2img_template_path,
         &config.img2img_template_path,
-        config.txt2img_prompt_node_id.clone(),
-        config.img2img_prompt_node_id.clone(),
+        &config.txt2vid_template_path,
+        &config.img2vid_template_path,
+        node_config,
     ));
+
+    let video_cache = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
 
     let state = Arc::new(AppState {
         config: config.clone(),
         comfy_client,
         workflow_manager,
+        video_cache,
     });
 
     // 4. Setup CORS & Middleware

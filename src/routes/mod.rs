@@ -1,5 +1,6 @@
 pub mod edits;
 pub mod generations;
+pub mod videos;
 
 use std::sync::Arc;
 use axum::extract::{Request, State};
@@ -24,6 +25,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/v1/images/generations", post(generations::handle_generate_image))
         .route("/images/edits", post(edits::handle_edit_image))
         .route("/v1/images/edits", post(edits::handle_edit_image))
+        .route("/videos", post(videos::handle_generate_video))
+        .route("/v1/videos", post(videos::handle_generate_video))
+        .route("/videos/generations", post(videos::handle_generate_video))
+        .route("/v1/videos/generations", post(videos::handle_generate_video))
+        .route("/videos/:id", get(videos::handle_get_video))
+        .route("/v1/videos/:id", get(videos::handle_get_video))
+        .route("/videos/:id/content", get(videos::handle_get_video_content))
+        .route("/v1/videos/:id/content", get(videos::handle_get_video_content))
         .fallback(handle_404)
         .layer(from_fn(log_request_middleware))
         .with_state(state)
@@ -70,7 +79,7 @@ pub async fn handle_404(req: Request) -> impl IntoResponse {
     let body = Json(OpenAiErrorResponse {
         error: OpenAiErrorDetail {
             message: format!(
-                "Unmatched route: {} {}. Supported endpoints: /v1/images/generations, /v1/images/edits, /v1/models, /health",
+                "Unmatched route: {} {}. Supported endpoints: /v1/images/generations, /v1/images/edits, /v1/videos, /v1/models, /health",
                 method, uri
             ),
             error_type: "invalid_request_error".to_string(),
@@ -97,28 +106,53 @@ async fn list_models(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
         .clone()
         .unwrap_or_else(|| "v1-5-pruned-emaonly.ckpt".to_string());
 
-    Json(json!({
-        "object": "list",
-        "data": [
-            {
-                "id": "dall-e-3",
-                "object": "model",
-                "created": 1698785189,
-                "owned_by": "system"
-            },
-            {
-                "id": "dall-e-2",
-                "object": "model",
-                "created": 1698785189,
-                "owned_by": "system"
-            },
-            {
-                "id": default_model,
+    let mut models = vec![
+        json!({
+            "id": "dall-e-3",
+            "object": "model",
+            "created": 1698785189,
+            "owned_by": "system"
+        }),
+        json!({
+            "id": "dall-e-2",
+            "object": "model",
+            "created": 1698785189,
+            "owned_by": "system"
+        }),
+        json!({
+            "id": "sora-2",
+            "object": "model",
+            "created": 1698785189,
+            "owned_by": "system"
+        }),
+        json!({
+            "id": "sora",
+            "object": "model",
+            "created": 1698785189,
+            "owned_by": "system"
+        }),
+        json!({
+            "id": default_model,
+            "object": "model",
+            "created": 1698785189,
+            "owned_by": "comfyui"
+        }),
+    ];
+
+    if let Some(ref vid_model) = state.config.default_video_checkpoint {
+        if vid_model != &default_model {
+            models.push(json!({
+                "id": vid_model,
                 "object": "model",
                 "created": 1698785189,
                 "owned_by": "comfyui"
-            }
-        ]
+            }));
+        }
+    }
+
+    Json(json!({
+        "object": "list",
+        "data": models
     }))
 }
 
@@ -131,7 +165,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::comfy_v2::client::ComfyV2Client;
-    use crate::comfy_v2::workflow::WorkflowManager;
+    use crate::comfy_v2::workflow::{WorkflowManager, WorkflowNodeConfig};
     use crate::config::AppConfig;
 
     fn create_test_state() -> Arc<AppState> {
@@ -142,24 +176,38 @@ mod tests {
             comfy_api_key: None,
             openwebui_base_url: None,
             poll_interval_ms: 100,
-            job_timeout_secs: 10,
+            img_timeout_secs: 10,
+            vid_timeout_secs: 10,
             default_checkpoint: None,
+            default_video_checkpoint: None,
             txt2img_template_path: PathBuf::from("templates/txt2img.json"),
             img2img_template_path: PathBuf::from("templates/img2img.json"),
+            txt2vid_template_path: PathBuf::from("templates/txt2vid.json"),
+            img2vid_template_path: PathBuf::from("templates/img2vid.json"),
             txt2img_prompt_node_id: None,
             img2img_prompt_node_id: None,
+            txt2vid_prompt_node_id: None,
+            txt2vid_seconds_node_id: None,
+            txt2vid_fps_node_id: None,
+            img2vid_prompt_node_id: None,
+            img2vid_image_node_id: None,
+            img2vid_seconds_node_id: None,
+            img2vid_fps_node_id: None,
         };
         let comfy_client = ComfyV2Client::new(config.comfy_base_url.clone(), None);
         let workflow_manager = Arc::new(WorkflowManager::new(
             &config.txt2img_template_path,
             &config.img2img_template_path,
-            None,
-            None,
+            &config.txt2vid_template_path,
+            &config.img2vid_template_path,
+            WorkflowNodeConfig::default(),
         ));
+        let video_cache = Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new()));
         Arc::new(AppState {
             config,
             comfy_client,
             workflow_manager,
+            video_cache,
         })
     }
 
@@ -201,5 +249,66 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res2.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_list_models_contains_sora() {
+        let app = create_router(create_test_state());
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/models")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let models = json["data"].as_array().unwrap();
+        let ids: Vec<&str> = models.iter().filter_map(|m| m["id"].as_str()).collect();
+        assert!(ids.contains(&"sora-2"));
+        assert!(ids.contains(&"sora"));
+    }
+
+    #[tokio::test]
+    async fn test_videos_route_empty_prompt_returns_bad_request() {
+        let app = create_router(create_test_state());
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/videos")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"prompt": "   "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_videos_route_with_input_image_empty_prompt_returns_bad_request() {
+        let app = create_router(create_test_state());
+
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/videos")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"prompt": "   ", "input_reference": "foo.png"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 }

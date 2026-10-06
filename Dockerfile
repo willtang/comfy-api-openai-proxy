@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock* ./
 # Create dummy src/main.rs and templates for cargo build cache
 RUN mkdir src && echo "fn main() {}" > src/main.rs && \
-    mkdir templates && echo "{}" > templates/txt2img.json && echo "{}" > templates/img2img.json && \
+    mkdir templates && echo "{}" > templates/txt2img.json && echo "{}" > templates/img2img.json && echo "{}" > templates/txt2vid.json && echo "{}" > templates/img2vid.json && \
     cargo build --release && \
     rm -rf src templates
 
@@ -49,7 +49,9 @@ ENV HOST=0.0.0.0 \
     PORT=8190 \
     COMFY_BASE_URL=http://host.docker.internal:8189 \
     TXT2IMG_TEMPLATE_PATH=/app/templates/txt2img.json \
-    IMG2IMG_TEMPLATE_PATH=/app/templates/img2img.json
+    IMG2IMG_TEMPLATE_PATH=/app/templates/img2img.json \
+    TXT2VID_TEMPLATE_PATH=/app/templates/txt2vid.json \
+    IMG2VID_TEMPLATE_PATH=/app/templates/img2vid.json
 
 EXPOSE 8190
 

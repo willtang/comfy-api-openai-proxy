@@ -130,6 +130,67 @@ pub struct EditImageRequest {
     pub user: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateVideoRequest {
+    pub prompt: String,
+    pub model: Option<String>,
+    pub size: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    pub seconds: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    pub duration: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_u32")]
+    pub fps: Option<u32>,
+    pub quality: Option<String>,
+    pub response_format: Option<String>,
+    pub user: Option<String>,
+    pub n: Option<u32>,
+    pub aspect_ratio: Option<String>,
+
+    pub input_reference: Option<FlexibleStringOrVec>,
+    pub image: Option<FlexibleStringOrVec>,
+    pub image_url: Option<FlexibleStringOrVec>,
+    pub image_urls: Option<FlexibleStringOrVec>,
+    pub images: Option<FlexibleStringOrVec>,
+    pub first_frame: Option<FlexibleStringOrVec>,
+    pub first_frame_image: Option<FlexibleStringOrVec>,
+}
+
+impl CreateVideoRequest {
+    pub fn get_input_image(&self) -> Option<String> {
+        self.input_reference
+            .as_ref()
+            .and_then(|v| v.first())
+            .or_else(|| self.first_frame.as_ref().and_then(|v| v.first()))
+            .or_else(|| self.first_frame_image.as_ref().and_then(|v| v.first()))
+            .or_else(|| self.image.as_ref().and_then(|v| v.first()))
+            .or_else(|| self.image_url.as_ref().and_then(|v| v.first()))
+            .or_else(|| self.images.as_ref().and_then(|v| v.first()))
+            .or_else(|| self.image_urls.as_ref().and_then(|v| v.first()))
+            .filter(|s| !s.trim().is_empty())
+    }
+}
+
+fn deserialize_optional_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<Value>::deserialize(deserializer)?;
+    match opt {
+        Some(Value::Number(n)) => Ok(n.as_u64().map(|v| v as u32)),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else {
+                trimmed.parse::<u32>().map(Some).map_err(serde::de::Error::custom)
+            }
+        }
+        Some(Value::Null) | None => Ok(None),
+        _ => Err(serde::de::Error::custom("expected integer or string")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +220,39 @@ mod tests {
         let json_str2 = r#"{"prompt": "test", "images": [{"url": "http://example.com/a.jpg"}]}"#;
         let req2: UnifiedImageRequest = serde_json::from_str(json_str2).unwrap();
         assert_eq!(req2.get_input_image(), Some("http://example.com/a.jpg".to_string()));
+    }
+
+    #[test]
+    fn test_deserialize_create_video_request() {
+        let json_str = r#"{
+            "prompt": "A sunset over the mountains",
+            "model": "sora-2",
+            "size": "1280x720",
+            "seconds": "4",
+            "fps": 16,
+            "response_format": "url"
+        }"#;
+
+        let req: CreateVideoRequest = serde_json::from_str(json_str).unwrap();
+        assert_eq!(req.prompt, "A sunset over the mountains");
+        assert_eq!(req.model, Some("sora-2".to_string()));
+        assert_eq!(req.size, Some("1280x720".to_string()));
+        assert_eq!(req.seconds, Some(4));
+        assert_eq!(req.fps, Some(16));
+        assert_eq!(req.response_format, Some("url".to_string()));
+    }
+
+    #[test]
+    fn test_deserialize_create_video_request_with_input_image() {
+        let json_str = r#"{
+            "prompt": "Animate the first frame",
+            "input_reference": "https://example.com/first_frame.png",
+            "seconds": 5
+        }"#;
+
+        let req: CreateVideoRequest = serde_json::from_str(json_str).unwrap();
+        assert_eq!(req.prompt, "Animate the first frame");
+        assert_eq!(req.get_input_image(), Some("https://example.com/first_frame.png".to_string()));
+        assert_eq!(req.seconds, Some(5));
     }
 }

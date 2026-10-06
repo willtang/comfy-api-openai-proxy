@@ -66,7 +66,7 @@ pub async fn handle_generate_image(
     );
 
     let poll_interval = Duration::from_millis(state.config.poll_interval_ms);
-    let timeout = Duration::from_secs(state.config.job_timeout_secs);
+    let timeout = Duration::from_secs(state.config.img_timeout_secs);
 
     let mut image_datas = Vec::new();
 

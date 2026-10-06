@@ -119,7 +119,7 @@ pub async fn fetch_image_bytes(
         .ok()
         .and_then(|u| {
             u.path_segments()
-                .and_then(|segments| segments.last())
+                .and_then(|mut segments| segments.next_back())
                 .map(|s| s.to_string())
         })
         .filter(|s| !s.is_empty() && s.contains('.'))
@@ -163,12 +163,23 @@ mod tests {
             host: "127.0.0.1".into(),
             port: 8190,
             poll_interval_ms: 100,
-            job_timeout_secs: 10,
+            img_timeout_secs: 10,
+            vid_timeout_secs: 10,
             txt2img_template_path: PathBuf::from("templates/txt2img.json"),
             img2img_template_path: PathBuf::from("templates/img2img.json"),
+            txt2vid_template_path: PathBuf::from("templates/txt2vid.json"),
+            img2vid_template_path: PathBuf::from("templates/img2vid.json"),
             txt2img_prompt_node_id: None,
             img2img_prompt_node_id: None,
+            txt2vid_prompt_node_id: None,
+            txt2vid_seconds_node_id: None,
+            txt2vid_fps_node_id: None,
+            img2vid_prompt_node_id: None,
+            img2vid_image_node_id: None,
+            img2vid_seconds_node_id: None,
+            img2vid_fps_node_id: None,
             default_checkpoint: None,
+            default_video_checkpoint: None,
         }
     }
 

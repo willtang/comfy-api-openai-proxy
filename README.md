@@ -9,8 +9,11 @@ A lightweight Rust reverse proxy built with **Axum** and **Reqwest** that accept
 - **OpenAI Standard Compatibility**:
   - `POST /v1/images/generations`: Text-to-Image with JSON payload.
   - `POST /v1/images/edits`: Image-to-Image / Edit with `multipart/form-data`.
+  - `POST /v1/videos`: Video generation (Text-to-Video and First-Frame Image-to-Video, OpenAI / Sora compatible).
+  - `GET /v1/videos/{id}`: Video generation job status checking.
+  - `GET /v1/videos/{id}/content`: Download completed video binary.
   - Supports `response_format`: `"url"` and `"b64_json"`.
-  - Supports custom dimensions (`size`), prompt, and models.
+  - Supports custom dimensions (`size`, `aspect_ratio`), prompt, duration (`seconds`), fps, and models.
 - **Comfy API v2 Native**:
   - Automatically uploads input images to `POST /api/v2/assets`.
   - References inputs in workflows using the standard `core/ASSET` specification.
@@ -18,12 +21,12 @@ A lightweight Rust reverse proxy built with **Axum** and **Reqwest** that accept
   - Polls `GET /api/v2/jobs/{id}` until terminal status (`succeeded`, `failed`, `expired`, `canceled`).
   - Downloads generated assets from `GET /api/v2/assets/{id}/content`.
 - **Workflow Templating**:
-  - Customizable API-format workflow templates in `templates/txt2img.json` and `templates/img2img.json`.
-  - Automatically randomizes seeds and injects prompts, dimensions, and checkpoint loaders.
+  - Customizable API-format workflow templates in `templates/txt2img.json`, `templates/img2img.json`, `templates/txt2vid.json`, and `templates/img2vid.json`.
+  - Automatically randomizes seeds and injects prompts, dimensions, duration, input assets, and checkpoint loaders.
 - **Resilient & Fast**:
   - Built with Rust, Axum, and Tokio for asynchronous execution and high throughput.
-- **Tested with Open WebUI**:
-  - Fully tested and verified for seamless image generation with **Open WebUI**.
+- **Tested with Open WebUI & OpenAI SDK**:
+  - Fully tested and verified for seamless image and video generation with standard clients.
 
 ---
 
@@ -35,9 +38,10 @@ A lightweight Rust reverse proxy built with **Axum** and **Reqwest** that accept
                       |                                          |
   Client (OpenAI SDK) |  POST /v1/images/generations (JSON)      |
 --------------------->|  POST /v1/images/edits (Multipart)       |
+                      |  POST /v1/videos (JSON / Multipart)      |
                       |                                          |
                       |  1. Parse request & validate             |
-                      |  2. If edit: Upload asset to v2          |
+                      |  2. If image input: Upload asset to v2   |
                       |  3. Hydrate workflow template            |
                       |  4. Submit job via POST /api/v2/jobs     |
                       |  5. Poll GET /api/v2/jobs/{id}           |
@@ -48,6 +52,7 @@ A lightweight Rust reverse proxy built with **Axum** and **Reqwest** that accept
                       +------------------------------------------+
                       |           Comfy API v2 Surface           |
                       |    (Local comfy-api-proxy / Cloud)       |
+                      |   txt2img / img2img / txt2vid / img2vid  |
                       +------------------------------------------+
 ```
 
@@ -64,12 +69,25 @@ Set via environment variables:
 | `HOST` | Proxy bind host | `0.0.0.0` |
 | `PORT` | Proxy bind port | `8190` |
 | `POLL_INTERVAL_MS` | Job polling delay in milliseconds | `500` |
-| `JOB_TIMEOUT_SECS` | Maximum seconds before job timeout | `180` |
-| `DEFAULT_CHECKPOINT` | Override default checkpoint name in template | _None_ |
+| `IMG_TIMEOUT_SECS` | Maximum seconds before image generation timeout | `180` |
+| `VID_TIMEOUT_SECS` | Maximum seconds before video generation timeout | `600` |
+| `DEFAULT_CHECKPOINT` | Override default checkpoint name in image template | _None_ |
+| `DEFAULT_VIDEO_CHECKPOINT` | Override default checkpoint name in video template | _None_ |
 | `TXT2IMG_TEMPLATE_PATH` | Path to txt2img workflow JSON | `templates/txt2img.json` |
 | `IMG2IMG_TEMPLATE_PATH` | Path to img2img workflow JSON | `templates/img2img.json` |
+| `TXT2VID_TEMPLATE_PATH` | Path to txt2vid workflow JSON | `templates/txt2vid.json` |
+| `IMG2VID_TEMPLATE_PATH` | Path to img2vid workflow JSON (first-frame video) | `templates/img2vid.json` |
 | `TXT2IMG_PROMPT_NODE_ID` | Optional node ID for txt2img prompt (e.g. `459:471` or `6`) | _Auto-detect_ |
 | `IMG2IMG_PROMPT_NODE_ID` | Optional node ID for img2img prompt (e.g. `459:471` or `6`) | _Auto-detect_ |
+| `TXT2VID_PROMPT_NODE_ID` | Optional node ID for txt2vid prompt (e.g. `459:471` or `6`) | _Auto-detect_ |
+| `TXT2VID_SECONDS_NODE_ID` | Optional node ID for txt2vid duration in seconds (e.g. `398:362`) | _Auto-detect_ |
+| `TXT2VID_FPS_NODE_ID` | Optional node ID for txt2vid frame rate (e.g. `398:361`) | _Auto-detect_ |
+| `IMG2VID_PROMPT_NODE_ID` | Optional node ID for img2vid prompt (e.g. `398:376` or `6`) | _Auto-detect_ |
+| `IMG2VID_IMAGE_NODE_ID` | Optional node ID for img2vid input image (e.g. `395` or `1`) | _Auto-detect_ |
+| `IMG2VID_SECONDS_NODE_ID` | Optional node ID for img2vid duration in seconds (e.g. `398:362`) | _Auto-detect_ |
+| `IMG2VID_FPS_NODE_ID` | Optional node ID for img2vid frame rate (e.g. `398:361`) | _Auto-detect_ |
+| `SECONDS_NODE_ID` | Global fallback node ID for video duration in seconds | _Auto-detect_ |
+| `FPS_NODE_ID` | Global fallback node ID for video frame rate | _Auto-detect_ |
 
 ---
 
@@ -140,7 +158,52 @@ curl http://localhost:8190/v1/images/edits \
   -F "response_format=url"
 ```
 
-### 3. OpenAI Python SDK
+### 3. Text-to-Video Generation (curl)
+
+```bash
+curl http://localhost:8190/v1/videos \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "A cinematic drone shot flying over a futuristic neon city at night",
+    "size": "512x512",
+    "seconds": 2,
+    "fps": 8
+  }'
+```
+
+You can also fetch video details or download the binary video file:
+```bash
+# Check status / metadata
+curl http://localhost:8190/v1/videos/{video_id}
+
+# Download video content directly
+curl http://localhost:8190/v1/videos/{video_id}/content --output video.mp4
+```
+
+### 4. First-Frame Image-to-Video Generation (curl)
+
+**Via Multipart Upload (`/v1/videos`):**
+```bash
+curl http://localhost:8190/v1/videos \
+  -F "image=@first_frame.png" \
+  -F "prompt=The subject turns their head slowly and smiles, cinematic lighting" \
+  -F "seconds=4" \
+  -F "fps=16"
+```
+
+**Via JSON with Image Reference / URL:**
+```bash
+curl http://localhost:8190/v1/videos \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Camera pans slowly around the portrait, ambient neon glow",
+    "input_reference": "https://example.com/start_frame.png",
+    "seconds": 5,
+    "fps": 24
+  }'
+```
+
+### 5. OpenAI Python SDK
 
 ```python
 from openai import OpenAI
@@ -170,7 +233,7 @@ with open("photo.png", "rb") as image_file:
     print(edit_response.data[0].url)
 ```
 
-### 4. Open WebUI Integration
+### 6. Open WebUI Integration
 
 Tested and verified for seamless image generation with **Open WebUI**:
 
@@ -184,13 +247,15 @@ Tested and verified for seamless image generation with **Open WebUI**:
 ## Workflow Customization
 
 Templates are standard ComfyUI API-format JSON graphs:
-- `templates/txt2img.json`: Used for text generations.
-- `templates/img2img.json`: Used for image edits.
+- `templates/txt2img.json`: Used for text-to-image generations.
+- `templates/img2img.json`: Used for image edits / image-to-image.
+- `templates/txt2vid.json`: Used for text-to-video generations.
+- `templates/img2vid.json`: Used for first-frame image-to-video generations.
 
 To use your own workflow:
 1. In ComfyUI, configure your workflow.
 2. Enable **Dev Mode** in ComfyUI settings, then click **Save (API Format)**.
-3. Save the JSON file to `templates/txt2img.json` or `templates/img2img.json`.
+3. Save the JSON file to `templates/txt2img.json`, `templates/img2img.json`, `templates/txt2vid.json`, or `templates/img2vid.json`.
 
 ---
 
